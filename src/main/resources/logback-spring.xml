@@ -14,6 +14,10 @@
             <connectionTimeoutMs>5000</connectionTimeoutMs>
             <requestTimeoutMs>5000</requestTimeoutMs>
         </http>
+        <batch>
+           <maxItems>100</maxItems>
+           <timeoutMs>5000</timeoutMs>
+        </batch>
         <format>
             <label>
                 <pattern>app=${appName},level=%level</pattern>
