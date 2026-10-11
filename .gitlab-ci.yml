@@ -8,8 +8,11 @@ test:
   image: maven:3.9.6-eclipse-temurin-17
   script:
     - mvn install:install-file -Dfile=libs/product-core-0.3.0.jar -DgroupId=sn.isi.l3gl.core -DartifactId=product-core -Dversion=0.3.0 -Dpackaging=jar
-    - mvn test -DskipTests
-  allow_failure: true
+    - mvn test
+  artifacts:
+    when: always
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
 
 build:
   stage: build

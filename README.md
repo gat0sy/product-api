@@ -121,8 +121,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and 
 
 | Job | What it does |
 |---|---|
-| `test` | Installs `product-core`, runs the Maven test phase (non-blocking) |
-| `build` | Packages the jar and uploads it as a workflow artifact |
+| `test` | Installs `product-core` and runs the test suite; a failure stops the pipeline |
+| `build` | Runs only if `test` passed; packages the jar (tests skipped) and uploads it as a workflow artifact |
 | `docker` | On pushes to `develop` only: builds the image from the jar and pushes it to Docker Hub |
 
 Required repository settings (**Settings → Secrets and variables → Actions**):
@@ -134,6 +134,20 @@ Required repository settings (**Settings → Secrets and variables → Actions**
 | Variable | `DOCKER_IMAGE` | e.g. `gat0sy/product-api:latest` |
 
 `.gitlab-ci.yml` is the original GitLab pipeline with the same three stages, using `DOCKER_USERNAME`, `DOCKER_PASSWORD` and `DOCKER_IMAGE` as CI/CD variables.
+
+## Tests
+
+```bash
+./mvnw test
+```
+
+Tests use an in-memory H2 database (profile `test`, `src/test/resources/application-test.properties`), so no MySQL is needed. `src/test/resources/logback-test.xml` replaces the Loki appender with console logging.
+
+| Test class | Scope |
+|---|---|
+| `ProductControllerTest` | Controller unit tests with a mocked `ProductService` (request mapping, parameters, JSON) |
+| `ProductApiIntegrationTest` | Full context + H2: create/list/update flow, low-stock threshold (≤ 5), health probes, Prometheus endpoint |
+| `ProductApiApplicationTests` | Application context loads |
 
 ## Infrastructure
 
@@ -208,7 +222,6 @@ These are known and planned to be addressed shortly:
 
 - **No persistent storage for MySQL.** `k8s/mysql.yaml` mounts no volume, so the database is reinitialized whenever the MySQL pod or the VM restarts. A PersistentVolumeClaim on the cluster's default `standard` storage class is planned.
 - **No readiness probe on MySQL.** The MySQL pod reports Ready before it accepts connections. On the resource-constrained VM, initialization can take several minutes, during which product-api fails to start (`Unable to determine Dialect without JDBC metadata`) and goes into `CrashLoopBackOff` until MySQL is up.
-- **Tests are skipped in CI.** The `test` job runs `mvn test -DskipTests` and is allowed to fail, so it does not actually validate anything yet.
 - **Hard-coded IPs.** The Loki URL (`logback-spring.xml`) and the Prometheus target (`prometheus.yml`) use fixed VM addresses.
 - **Root database user.** The application connects to MySQL as `root`; a dedicated, least-privilege user would be safer.
 
