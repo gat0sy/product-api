@@ -172,6 +172,40 @@ Two VirtualBox VMs on a host-only network (`vboxnet0`):
                     └───────────────────────────────────────────────────┘
 ```
 
+### Hardware and resource allocation
+
+Everything runs on a single physical machine:
+
+| Host | |
+|---|---|
+| CPU | Intel Core i5-6400T, 4 cores / 4 threads @ 2.2 GHz |
+| RAM | 7.7 GiB |
+| OS | Debian 13 (trixie), kernel 6.12 |
+| Hypervisor | VirtualBox 7.2.6 (KVM modules must be unloaded: `sudo modprobe -r kvm_intel kvm`) |
+
+| VM | vCPU | RAM | Disk | OS | Runs |
+|---|---|---|---|---|---|
+| `k8s-node` | 2 | 4 GiB | 38 GB | Ubuntu 22.04.5 | Docker 29.3, minikube 1.38 (docker driver, Kubernetes 1.35), minikube container capped at 2800 MiB |
+| `monitor-node` | 1 | 2 GiB | 11 GB | Ubuntu 22.04.5 | Docker 29.4, Prometheus + Loki 2.9 + Grafana |
+
+The VMs take 3 of the host's 4 cores and 6 of its 7.7 GiB, so the host itself runs with little headroom. Other services on the host (MariaDB, PostgreSQL, LightDM, Jellyfin) are stopped while the lab runs.
+
+Kubernetes requests and limits in `devops-l3gl`:
+
+| Pod | CPU request / limit | Memory request / limit | Notes |
+|---|---|---|---|
+| `product-api` | 200m / 400m | 512Mi / 768Mi | Safety margins chosen while debugging startup failures: memory raised from 250Mi / 500Mi, JVM heap capped with `-Xms256m -Xmx400m` to stay within the limit, and probe delays extended from 30 s to 160 s (failure threshold 5) so a slow Spring Boot start is not killed before it finishes. |
+| `mysql` | none | none | Not set yet (see limitations). |
+| `wait-for-mysql` (init) | none | none | `busybox` sleep loop, negligible. |
+
+Cluster-wide, requests total 1050m CPU (52%) and 772Mi memory (19%) of the node, most of it from the Kubernetes control plane and ingress-nginx.
+
+Measured behavior with this allocation:
+
+- MySQL's first-time initialization of an empty volume takes ~10 minutes; a restart on an existing volume takes a few seconds.
+- During a `product-api` rolling update, the old and new Java pods run side by side, pushing the `k8s-node` load average above 6 on 2 vCPUs.
+- The observability stack is light: Grafana ~100 MiB, Loki ~40 MiB, Prometheus ~17 MiB.
+
 ### Kubernetes deployment
 
 Everything runs in the `devops-l3gl` namespace.
@@ -228,6 +262,7 @@ Logs are pushed by the loki4j Logback appender with labels `app=product-api` and
 
 These are known and planned to be addressed shortly:
 
+- **Resource allocation not tuned yet.** MySQL has no requests or limits, so it is scheduled as BestEffort and is the first pod evicted or OOM-killed under memory pressure. minikube's container is capped at 2800 MiB while the node advertises the full 4 GiB of the VM, so the scheduler can over-commit memory. `product-api` uses a rolling update, briefly running two JVMs on 2 vCPUs. `monitor-node`'s disk is 74% full.
 - **Slow first start.** On the resource-constrained VM, MySQL's first-time initialization of an empty volume can take ~10 minutes. product-api waits for it (init container) instead of crash-looping, but the app is unavailable until then.
 - **Hard-coded IPs.** The Loki URL (`logback-spring.xml`) and the Prometheus target (`prometheus.yml`) use fixed VM addresses.
 - **Root database user.** The application connects to MySQL as `root`; a dedicated, least-privilege user would be safer.
