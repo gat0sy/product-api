@@ -1,5 +1,7 @@
 # product-api
 
+[![CI/CD](https://github.com/gat0sy/product-api/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/gat0sy/product-api/actions/workflows/ci.yml)
+
 REST API for managing a product inventory, built with Spring Boot on top of the `product-core` library (entity, repository and service layer). The project ships with a full DevOps toolchain: CI/CD, a Docker image, Kubernetes manifests, and metrics/logs observability with Prometheus, Loki and Grafana.
 
 ## Tech stack
