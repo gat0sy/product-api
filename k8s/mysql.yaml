@@ -1,12 +1,28 @@
 # mysql-secret is created out of band, never committed:
 #   kubectl create secret generic mysql-secret -n devops-l3gl \
 #     --from-literal=mysql-root-password='<password>'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  namespace: devops-l3gl
+spec:
+  storageClassName: standard
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql
   namespace: devops-l3gl
 spec:
+  # Never run two MySQL pods on the same data directory during a rollout
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: mysql
@@ -28,6 +44,22 @@ spec:
               value: product_db
           ports:
             - containerPort: 3306
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          # TCP ping (not the socket): during first-time init the entrypoint runs a
+          # temporary socket-only server, so this only passes once the real server
+          # accepts network connections. mysqladmin ping exits 0 even on auth errors.
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-data
 ---
 apiVersion: v1
 kind: Service

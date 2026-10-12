@@ -187,10 +187,16 @@ kubectl apply -f k8s/mysql.yaml
 kubectl apply -f k8s/l3gl-devops.yaml
 ```
 
+`k8s/mysql.yaml` defines:
+
+- **PersistentVolumeClaim** `mysql-data` (2Gi, `standard` storage class) mounted at `/var/lib/mysql`, so data survives pod and VM restarts.
+- **Deployment** `mysql` (MySQL 8.0) with `Recreate` strategy (never two MySQL pods on the same data directory) and a readiness probe (`mysqladmin ping` over TCP).
+- **Service** `mysql` on port 3306.
+
 `k8s/l3gl-devops.yaml` defines:
 
 - **ConfigMap** `product-api-config`: datasource URL, username, and JPA `ddl-auto`.
-- **Deployment** `product-api`: image `gat0sy/product-api:latest`, password injected from `mysql-secret`, JVM heap capped at 400 MB (`-Xms256m -Xmx400m`), requests 200m CPU / 512Mi and limits 400m CPU / 768Mi, liveness and readiness probes on the actuator health endpoints (160 s initial delay, failure threshold 5).
+- **Deployment** `product-api`: an init container that waits until the `mysql` Service accepts connections, image `gat0sy/product-api:latest`, password injected from `mysql-secret`, JVM heap capped at 400 MB (`-Xms256m -Xmx400m`), requests 200m CPU / 512Mi and limits 400m CPU / 768Mi, liveness and readiness probes on the actuator health endpoints (160 s initial delay, failure threshold 5).
 - **Service** `product-api` on port 8086.
 - **Ingress** routing `/` to the service, reachable at `http://192.168.56.102/`.
 
@@ -222,8 +228,7 @@ Logs are pushed by the loki4j Logback appender with labels `app=product-api` and
 
 These are known and planned to be addressed shortly:
 
-- **No persistent storage for MySQL.** `k8s/mysql.yaml` mounts no volume, so the database is reinitialized whenever the MySQL pod or the VM restarts. A PersistentVolumeClaim on the cluster's default `standard` storage class is planned.
-- **No readiness probe on MySQL.** The MySQL pod reports Ready before it accepts connections. On the resource-constrained VM, initialization can take several minutes, during which product-api fails to start (`Unable to determine Dialect without JDBC metadata`) and goes into `CrashLoopBackOff` until MySQL is up.
+- **Slow first start.** On the resource-constrained VM, MySQL's first-time initialization of an empty volume can take ~10 minutes. product-api waits for it (init container) instead of crash-looping, but the app is unavailable until then.
 - **Hard-coded IPs.** The Loki URL (`logback-spring.xml`) and the Prometheus target (`prometheus.yml`) use fixed VM addresses.
 - **Root database user.** The application connects to MySQL as `root`; a dedicated, least-privilege user would be safer.
 

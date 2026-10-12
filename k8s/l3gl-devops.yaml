@@ -23,6 +23,11 @@ spec:
       labels:
         app: product-api
     spec:
+      # The mysql Service only routes to a Ready pod, so this waits for MySQL's readiness probe
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z -w 2 mysql 3306; do echo waiting for mysql; sleep 5; done"]
       containers:
         - name: product-api
           image: gat0sy/product-api:latest
