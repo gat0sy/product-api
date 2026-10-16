@@ -1,0 +1,34 @@
+# {{ ansible_managed }}
+# Starts the minikube cluster at boot, as the user that owns the profile.
+# The workloads (mysql, product-api) are already defined in the cluster and come back on their own.
+[Unit]
+Description=minikube Kubernetes cluster
+# minikube runs as a container on the docker driver; ordering after docker also
+# means minikube is stopped before docker at shutdown
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+# Give up after 5 failed attempts within 15 minutes
+StartLimitIntervalSec=900
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User={{ app_user }}
+Environment=HOME={{ app_home }}
+Environment=MINIKUBE_IN_STYLE=false
+Environment=MINIKUBE_WANTUPDATENOTIFICATION=false
+# Flags only matter when the cluster is first created; an existing profile keeps its settings
+ExecStart=/usr/local/bin/minikube start --interactive=false --driver=docker --cpus={{ minikube_cpus }} --memory={{ minikube_memory_mb }} --kubernetes-version={{ kubernetes_version }}
+ExecStop=/usr/local/bin/minikube stop
+# Right after boot, minikube's docker driver health check can time out under load
+# ("The driver '' is not supported"); retry instead of leaving the cluster down
+Restart=on-failure
+RestartSec=30
+# Starting the control plane is slow on this VM (2 vCPUs)
+TimeoutStartSec=900
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

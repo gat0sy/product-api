@@ -5,3 +5,9 @@
   become: true
   roles:
     - common
+
+- name: Kubernetes node (minikube)
+  hosts: k8s
+  become: true
+  roles:
+    - minikube

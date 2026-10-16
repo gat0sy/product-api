@@ -1,0 +1,7 @@
+# Cluster created on first start; later starts reuse the existing profile
+minikube_cpus: 2
+minikube_memory_mb: 2800
+minikube_addons:
+  - ingress
+  - storage-provisioner
+  - default-storageclass

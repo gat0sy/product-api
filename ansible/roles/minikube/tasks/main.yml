@@ -1,0 +1,45 @@
+- name: Install minikube {{ minikube_version }}
+  ansible.builtin.get_url:
+    url: "https://github.com/kubernetes/minikube/releases/download/{{ minikube_version }}/minikube-linux-amd64"
+    checksum: "sha256:https://github.com/kubernetes/minikube/releases/download/{{ minikube_version }}/minikube-linux-amd64.sha256"
+    dest: /usr/local/bin/minikube
+    mode: "0755"
+
+- name: Install kubectl {{ kubectl_version }}
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    checksum: "sha256:https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+
+- name: Install minikube systemd service
+  ansible.builtin.template:
+    src: minikube.service.j2
+    dest: /etc/systemd/system/minikube.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Apply systemd changes before starting the service
+  ansible.builtin.meta: flush_handlers
+
+# On a fresh VM this creates the cluster, which can take ~15 minutes
+- name: Start minikube and enable it at boot
+  ansible.builtin.systemd_service:
+    name: minikube
+    state: started
+    enabled: true
+
+- name: Read enabled addons
+  ansible.builtin.command: minikube addons list -o json
+  become: true
+  become_user: "{{ app_user }}"
+  register: minikube_addons_list
+  changed_when: false
+  check_mode: false
+
+- name: Enable addons
+  ansible.builtin.command: minikube addons enable {{ item }}
+  become: true
+  become_user: "{{ app_user }}"
+  loop: "{{ minikube_addons }}"
+  when: (minikube_addons_list.stdout | from_json)[item].Status != 'enabled'

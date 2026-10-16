@@ -30,7 +30,7 @@ REST API for managing a product inventory, built with Spring Boot on top of the 
 ├── k8s/
 │   ├── l3gl-devops.yaml             # product-api ConfigMap, Deployment, Service, Ingress
 │   └── mysql.yaml                   # MySQL Deployment + Service
-├── infra/systemd/minikube.service   # starts minikube at boot on k8s-node
+├── ansible/                         # provisioning for both VMs (roles: common, minikube, ...)
 ├── observability/
 │   ├── docker-compose.yml           # Prometheus, Loki, Grafana
 │   └── prometheus.yml               # scrape config
@@ -246,18 +246,13 @@ kubectl rollout status deploy/product-api -n devops-l3gl
 
 Both VMs bring their workloads back on boot, with no manual step:
 
-- **`k8s-node`**: `infra/systemd/minikube.service` runs `minikube start` as `gatosy` once Docker is up, and `minikube stop` at shutdown. The workloads are already defined in the cluster, so Kubernetes restarts MySQL and product-api by itself; the init container keeps product-api waiting until MySQL is ready.
+- **`k8s-node`**: a `minikube` systemd service (template in `ansible/roles/minikube/templates/minikube.service.j2`) runs `minikube start` as `gatosy` once Docker is up, and `minikube stop` at shutdown. The workloads are already defined in the cluster, so Kubernetes restarts MySQL and product-api by itself; the init container keeps product-api waiting until MySQL is ready.
 - **`monitor-node`**: Docker is enabled at boot and the Compose services use `restart: unless-stopped`, so Prometheus, Loki and Grafana come back on their own.
 
-Installing the minikube service on `k8s-node`:
+The service is installed by the Ansible `minikube` role. To inspect it on `k8s-node`:
 
 ```bash
-scp infra/systemd/minikube.service gatosy@192.168.56.102:/tmp/
-# on k8s-node
-sudo cp /tmp/minikube.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable minikube.service
-systemctl status minikube.service     # after the next boot: active (exited)
+systemctl status minikube.service     # after boot: active (exited)
 journalctl -u minikube.service -b     # startup log
 ```
 

@@ -1,0 +1,4 @@
+# Only reload the unit definition: restarting the service would bounce the whole cluster
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
