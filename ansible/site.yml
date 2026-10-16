@@ -1,0 +1,7 @@
+# Provisions both VMs from a fresh Ubuntu 22.04 install (see README for the manual prerequisites).
+# Run from ansible/: ansible-playbook site.yml --ask-become-pass
+- name: Base setup (Docker)
+  hosts: all
+  become: true
+  roles:
+    - common
