@@ -30,10 +30,14 @@ REST API for managing a product inventory, built with Spring Boot on top of the 
 ├── k8s/
 │   ├── l3gl-devops.yaml             # product-api ConfigMap, Deployment, Service, Ingress
 │   └── mysql.yaml                   # MySQL Deployment + Service
-├── ansible/                         # provisioning for both VMs (roles: common, minikube, ...)
+├── ansible/                         # provisions both VMs (see "Provisioning with Ansible")
+│   ├── site.yml, inventory.ini, ansible.cfg
+│   ├── group_vars/all/              # shared variables, secrets.yml.example
+│   └── roles/                       # common, minikube, k8s_app, ingress_proxy, observability
 ├── observability/
-│   ├── docker-compose.yml           # Prometheus, Loki, Grafana
-│   └── prometheus.yml               # scrape config
+│   ├── docker-compose.yml           # Prometheus, Loki, Grafana (pinned, named volumes)
+│   ├── prometheus.yml               # scrape config
+│   └── grafana/                     # provisioned datasources and dashboard
 ├── .github/workflows/ci.yml         # GitHub Actions pipeline
 └── .gitlab-ci.yml                   # original GitLab pipeline
 ```
@@ -191,6 +195,26 @@ Everything runs on a single physical machine:
 
 The VMs take 3 of the host's 4 cores and 6 of its 7.7 GiB, so the host itself runs with little headroom. Other services on the host (MariaDB, PostgreSQL, LightDM, Jellyfin) are stopped while the lab runs.
 
+#### Sizing recommendations
+
+The current machine is used as the **minimal** profile: everything works on it, but first starts are slow and the host has almost no headroom. The **recommended** profile is what to aim for when reusing this project; it is sized from what was observed on the minimal one, not tested.
+
+| | Minimal (tested) | Recommended |
+|---|---|---|
+| Host | 4 cores, 8 GiB RAM | 6–8 cores, 16 GiB RAM |
+| `k8s-node` | 2 vCPU, 4 GiB, 38 GB disk | 4 vCPU, 8 GiB, 40 GB disk |
+| minikube (`minikube_cpus`, `minikube_memory_mb`) | 2 CPUs, 2800 MB | 4 CPUs, 6144 MB |
+| `monitor-node` | 1 vCPU, 2 GiB, 11 GB disk | 2 vCPU, 4 GiB, 30 GB disk |
+
+Why these numbers:
+
+- **`k8s-node` cannot go below the minimal profile.** minikube refuses to start with fewer than 2 CPUs, and it is given 2800 MB, so a 4 GiB VM is the practical floor.
+- **CPU is the main bottleneck.** The Kubernetes control plane and ingress already request half of 2 vCPUs, and a `product-api` rolling update runs two JVMs side by side (load average above 6). With 4 vCPUs, MySQL's ~10-minute first initialization and rollouts should be much faster.
+- **Memory headroom for the cluster.** 6 GB for minikube fits MySQL, two JVMs during a rollout, the control plane and ingress without memory pressure.
+- **`monitor-node` disk fills up.** 11 GB is already over 70% used. Loki keeps logs indefinitely (see Known limitations) and Prometheus keeps 15 days of metrics. 2 vCPUs also shorten Grafana's ~10-minute first start.
+
+The minikube values only apply when the cluster is first created (`ansible/roles/minikube/defaults/main.yml`); an existing cluster keeps its size until it is deleted and recreated.
+
 Kubernetes requests and limits in `devops-l3gl`:
 
 | Pod | CPU request / limit | Memory request / limit | Notes |
@@ -207,9 +231,49 @@ Measured behavior with this allocation:
 - During a `product-api` rolling update, the old and new Java pods run side by side, pushing the `k8s-node` load average above 6 on 2 vCPUs.
 - The observability stack is light: Grafana ~100 MiB, Loki ~40 MiB, Prometheus ~17 MiB.
 
+### Provisioning with Ansible
+
+`ansible/` configures both VMs from a fresh Ubuntu 22.04 install. Running it against already configured VMs changes nothing (`changed=0`), so it is safe to re-run.
+
+**Manual prerequisites** (done once per VM, not automated):
+
+- Ubuntu 22.04 VMs sized at least to the minimal profile in "Sizing recommendations" (the recommended profile is better).
+- A user `gatosy` that can `sudo` on each VM.
+- `enp0s3`: NAT adapter with DHCP (internet access).
+- `enp0s8`: host-only adapter (`vboxnet0`) with a static IP in netplan: `192.168.56.102` for `k8s-node`, `192.168.56.101` for `monitor-node`.
+- A dedicated SSH key from the control machine:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/ansible_ed25519 -N "" -C "ansible@client"
+ssh-copy-id -i ~/.ssh/ansible_ed25519.pub gatosy@192.168.56.102
+ssh-copy-id -i ~/.ssh/ansible_ed25519.pub gatosy@192.168.56.101
+```
+
+**Running it** (from `ansible/`, on a machine with Ansible ≥ 2.15):
+
+```bash
+ansible-galaxy collection install -r requirements.yml
+cp group_vars/all/secrets.yml.example group_vars/all/secrets.yml   # then choose your own passwords
+ansible all -m ping
+ansible-playbook site.yml --ask-become-pass --check --diff          # dry run
+ansible-playbook site.yml --ask-become-pass
+```
+
+`secrets.yml` is git-ignored. Its values are only used when MySQL and Grafana are first created; changing them later does not change the passwords stored in existing data volumes.
+
+| Role | Hosts | What it sets up |
+|---|---|---|
+| `common` | both | Docker Engine and Compose plugin from Docker's apt repository, Docker enabled at boot, `gatosy` in the `docker` group |
+| `minikube` | `k8s-node` | minikube 1.38.1 and kubectl 1.35.3 (checksum-verified), the `minikube` systemd service (creates the cluster on first start: docker driver, 2 CPUs, 2800 MB, Kubernetes 1.35.1), ingress and storage addons |
+| `k8s_app` | `k8s-node` | `devops-l3gl` namespace, `mysql-secret` from `secrets.yml`, then `k8s/mysql.yaml` and `k8s/l3gl-devops.yaml` |
+| `ingress_proxy` | `k8s-node` | host nginx forwarding port 80 (`/api/`, `/actuator/`) to the minikube ingress at `minikube ip`, so the API is reachable from outside the VM |
+| `observability` | `monitor-node` | copies `observability/` to `~/observability`, writes the Grafana admin password to `.env`, runs `docker compose up -d` |
+
+On a fresh VM, expect the first run to take a while: creating the minikube cluster, MySQL's first initialization and Grafana's first start can each take around 10 minutes on this hardware.
+
 ### Kubernetes deployment
 
-Everything runs in the `devops-l3gl` namespace.
+Everything runs in the `devops-l3gl` namespace. The `k8s_app` role applies it; the manual equivalent is:
 
 ```bash
 kubectl create namespace devops-l3gl
@@ -275,8 +339,9 @@ Logs are pushed by the loki4j Logback appender with labels `app=product-api` and
 These are known and planned to be addressed shortly:
 
 - **Resource allocation not tuned yet.** MySQL has no requests or limits, so it is scheduled as BestEffort and is the first pod evicted or OOM-killed under memory pressure. minikube's container is capped at 2800 MiB while the node advertises the full 4 GiB of the VM, so the scheduler can over-commit memory. `product-api` uses a rolling update, briefly running two JVMs on 2 vCPUs. `monitor-node`'s disk is 74% full.
-- **Slow first start.** On the resource-constrained VM, MySQL's first-time initialization of an empty volume can take ~10 minutes. product-api waits for it (init container) instead of crash-looping, but the app is unavailable until then.
-- **Hard-coded IPs.** The Loki URL (`logback-spring.xml`) and the Prometheus target (`prometheus.yml`) use fixed VM addresses.
+- **Slow first start.** On the resource-constrained VMs, MySQL's first-time initialization of an empty volume and Grafana's first start on an empty database each take ~10 minutes. product-api waits for MySQL (init container) instead of crash-looping, but the app is unavailable until then. Later restarts reuse the volumes and are much faster.
+- **No Loki retention.** Loki currently uses filesystem-backed storage without an explicit retention policy (the image's default config, no compactor), so its disk consumption grows over time. Prometheus keeps its default 15 days of metrics. The recommended monitoring VM size provides additional capacity but does not replace retention configuration and disk monitoring.
+- **Hard-coded IPs.** The Loki URL (`logback-spring.xml`, baked into the Docker image) and the Prometheus target (`prometheus.yml`) use fixed VM addresses, so reproducing the setup elsewhere requires the same `192.168.56.101`/`.102` addresses or editing those files.
 - **Root database user.** The application connects to MySQL as `root`; a dedicated, least-privilege user would be safer.
 
 ## Authors
