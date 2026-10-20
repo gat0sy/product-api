@@ -1,0 +1,31 @@
+- name: Check that secrets.yml was filled in
+  ansible.builtin.assert:
+    that:
+      - grafana_admin_password is defined
+      - grafana_admin_password != 'change-me'
+    fail_msg: Copy group_vars/all/secrets.yml.example to secrets.yml and set grafana_admin_password.
+    quiet: true
+
+- name: Copy the compose project
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../observability/"
+    dest: "{{ observability_dir }}/"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: u=rwX,g=rX,o=rX
+
+- name: Write Grafana admin password to .env
+  ansible.builtin.copy:
+    content: "GRAFANA_ADMIN_PASSWORD={{ grafana_admin_password }}\n"
+    dest: "{{ observability_dir }}/.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0600"
+  no_log: true
+
+# Containers use restart: unless-stopped and Docker is enabled at boot, so they come back after a reboot
+- name: Start Prometheus, Loki and Grafana
+  community.docker.docker_compose_v2:
+    project_src: "{{ observability_dir }}"
+    state: present
+    remove_orphans: true

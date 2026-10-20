@@ -18,3 +18,9 @@
   roles:
     - k8s_app
     - ingress_proxy
+
+- name: Monitoring node (Prometheus, Loki, Grafana)
+  hosts: monitoring
+  become: true
+  roles:
+    - observability

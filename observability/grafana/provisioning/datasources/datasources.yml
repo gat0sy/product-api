@@ -1,0 +1,16 @@
+# Loaded by Grafana at startup. UIDs are fixed because the dashboards reference them.
+apiVersion: 1
+
+datasources:
+  - name: prometheus
+    uid: cfigxu8ermghse
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: loki
+    uid: ffigyegbjwxdsf
+    type: loki
+    access: proxy
+    url: http://loki:3100

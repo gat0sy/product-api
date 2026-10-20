@@ -260,16 +260,13 @@ journalctl -u minikube.service -b     # startup log
 
 On `monitor-node`:
 
-```bash
-cd observability
-docker compose up -d
-```
+The stack is deployed by the Ansible `observability` role, which copies `observability/` to `~/observability` and runs `docker compose up -d`. Images are pinned (Prometheus 3.11.1, Loki 2.9.0, Grafana 12.4.2) and each service keeps its data in a named volume. The Grafana admin password comes from a `.env` file written by Ansible.
 
 | Service | URL | Notes |
 |---|---|---|
 | Prometheus | `http://192.168.56.101:9090` | Scrapes `192.168.56.102:80/actuator/prometheus` every 10 s |
 | Loki | `http://192.168.56.101:3100` | Receives logs pushed by the app |
-| Grafana | `http://192.168.56.101:3000` | Add Prometheus and Loki as data sources |
+| Grafana | `http://192.168.56.101:3000` | Data sources and the "Product API Monitoring" dashboard are provisioned from `observability/grafana/` |
 
 Logs are pushed by the loki4j Logback appender with labels `app=product-api` and `level=<LEVEL>`, in batches of 10 entries or every 5 s. They are also written to the console, so `kubectl logs` still works.
 
