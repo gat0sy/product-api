@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Ansible secrets (copy from secrets.yml.example) ###
+ansible/group_vars/all/secrets.yml

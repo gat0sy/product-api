@@ -1,0 +1,5 @@
+k8s_namespace: devops-l3gl
+# Applied in order: MySQL first, then the API
+k8s_manifests:
+  - mysql.yaml
+  - l3gl-devops.yaml

@@ -1,0 +1,10 @@
+# Test the full config first so a bad template never takes the proxy down
+- name: Reload nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  notify: Apply nginx reload
+
+- name: Apply nginx reload
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded

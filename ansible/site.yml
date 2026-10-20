@@ -11,3 +11,10 @@
   become: true
   roles:
     - minikube
+
+- name: Application on Kubernetes
+  hosts: k8s
+  become: true
+  roles:
+    - k8s_app
+    - ingress_proxy

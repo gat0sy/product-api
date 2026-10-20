@@ -1,0 +1,54 @@
+# kubectl runs as the app user (its ~/.kube/config points at minikube).
+# In check mode, applies use a server-side dry run so --check reports real differences.
+- name: Check that secrets.yml was filled in
+  ansible.builtin.assert:
+    that:
+      - mysql_root_password is defined
+      - mysql_root_password != 'change-me'
+    fail_msg: Copy group_vars/all/secrets.yml.example to secrets.yml and set mysql_root_password.
+    quiet: true
+
+- name: Check for namespace {{ k8s_namespace }}
+  ansible.builtin.command: kubectl get namespace {{ k8s_namespace }}
+  become: true
+  become_user: "{{ app_user }}"
+  register: k8s_namespace_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Create namespace {{ k8s_namespace }}
+  ansible.builtin.command: kubectl create namespace {{ k8s_namespace }}
+  become: true
+  become_user: "{{ app_user }}"
+  when: k8s_namespace_check.rc != 0
+
+- name: Apply mysql-secret
+  ansible.builtin.command:
+    cmd: kubectl apply -f - {{ '--dry-run=server' if ansible_check_mode else '' }}
+    stdin: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: mysql-secret
+        namespace: {{ k8s_namespace }}
+      type: Opaque
+      data:
+        mysql-root-password: {{ mysql_root_password | b64encode }}
+  become: true
+  become_user: "{{ app_user }}"
+  register: k8s_secret_apply
+  changed_when: "' unchanged' not in k8s_secret_apply.stdout"
+  check_mode: false
+  no_log: true
+
+- name: Apply manifests from k8s/
+  ansible.builtin.command:
+    cmd: kubectl apply -f - {{ '--dry-run=server' if ansible_check_mode else '' }}
+    stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../k8s/' ~ item) }}"
+  become: true
+  become_user: "{{ app_user }}"
+  loop: "{{ k8s_manifests }}"
+  register: k8s_manifest_apply
+  changed_when: k8s_manifest_apply.stdout_lines | reject('search', ' unchanged') | list | length > 0
+  check_mode: false

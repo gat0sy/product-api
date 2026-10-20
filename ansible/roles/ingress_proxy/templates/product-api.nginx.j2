@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+# Forwards the VM's port 80 to the minikube ingress controller
+server {
+    listen 80;
+    server_name _;
+{% for path in ['/actuator/', '/api/'] %}
+
+    location {{ path }} {
+        proxy_pass http://{{ minikube_ip }}{{ path }};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+{% endfor %}
+}
