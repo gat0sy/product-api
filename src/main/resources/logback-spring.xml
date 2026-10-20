@@ -9,25 +9,24 @@
     </appender>
 
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
-    <http>
-        <url>http://192.168.56.101:3100/loki/api/v1/push</url>
-        <connectionTimeoutMs>5000</connectionTimeoutMs>
-        <requestTimeoutMs>5000</requestTimeoutMs>
-    </http>
-    <batch>
-        <maxItems>10</maxItems>
-        <timeoutMs>5000</timeoutMs>
-    </batch>
-    <verbose>true</verbose>
-    <drainOnStop>false</drainOnStop>
-    <format>
-        <label>
-            <pattern>app=${appName},level=%level</pattern>
-        </label>
-        <message>
-            <pattern>%-5level [%thread] %logger{36} - %msg%n</pattern>
-        </message>
-    </format>
+        <http>
+            <url>http://192.168.56.101:3100/loki/api/v1/push</url>
+            <connectionTimeoutMs>5000</connectionTimeoutMs>
+            <requestTimeoutMs>5000</requestTimeoutMs>
+        </http>
+        <!-- loki4j 1.5.x uses flat batch properties (no <batch> element) -->
+        <batchMaxItems>10</batchMaxItems>
+        <batchTimeoutMs>5000</batchTimeoutMs>
+        <verbose>true</verbose>
+        <drainOnStop>false</drainOnStop>
+        <format>
+            <label>
+                <pattern>app=${appName},level=%level</pattern>
+            </label>
+            <message>
+                <pattern>%-5level [%thread] %logger{36} - %msg%n</pattern>
+            </message>
+        </format>
     </appender>
 
     <root level="INFO">
