@@ -259,7 +259,17 @@ ansible-playbook site.yml --ask-become-pass --check --diff          # dry run
 ansible-playbook site.yml --ask-become-pass
 ```
 
-`env.yml` and `secrets.yml` are git-ignored. `env.yml` is the only place the VM user and IPs are set: the inventory, the Prometheus scrape target and the app's Loki URL all come from it. The values in `secrets.yml` are only used when MySQL and Grafana are first created; changing them later does not change the passwords stored in existing data volumes.
+**Settings to fill in** (both files are git-ignored):
+
+| File | Variable | Default in `.example` | Used for |
+|---|---|---|---|
+| `env.yml` | `app_user` | `devops` | SSH login user on both VMs (needs `sudo`); owns Docker, minikube and `~/observability` |
+| `env.yml` | `k8s_node_ip` | `192.168.56.102` | Inventory address of `k8s-node`; Prometheus scrape target |
+| `env.yml` | `monitor_node_ip` | `192.168.56.101` | Inventory address of `monitor-node`; the app's `LOKI_URL` (`monitoring-config` ConfigMap) |
+| `secrets.yml` | `mysql_root_password` | `change-me` (rejected) | MySQL root password (`mysql-secret`) |
+| `secrets.yml` | `grafana_admin_password` | `change-me` (rejected) | Grafana `admin` password (`~/observability/.env`) |
+
+`env.yml` is the only place the VM user and IPs are set; the playbook stops before connecting if it is missing. The values in `secrets.yml` are only used when MySQL and Grafana are first created; changing them later does not change the passwords stored in existing data volumes.
 
 | Role | Hosts | What it sets up |
 |---|---|---|
