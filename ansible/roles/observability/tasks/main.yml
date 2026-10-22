@@ -14,6 +14,15 @@
     group: "{{ app_user }}"
     mode: u=rwX,g=rX,o=rX
 
+- name: Write Prometheus config (scrapes k8s-node)
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ observability_dir }}/prometheus.yml"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0644"
+  notify: Restart Prometheus
+
 - name: Write Grafana admin password to .env
   ansible.builtin.copy:
     content: "GRAFANA_ADMIN_PASSWORD={{ grafana_admin_password }}\n"

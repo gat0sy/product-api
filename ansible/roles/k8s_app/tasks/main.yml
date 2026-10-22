@@ -42,6 +42,23 @@
   check_mode: false
   no_log: true
 
+- name: Apply monitoring-config
+  ansible.builtin.command:
+    cmd: kubectl apply -f - {{ '--dry-run=server' if ansible_check_mode else '' }}
+    stdin: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: monitoring-config
+        namespace: {{ k8s_namespace }}
+      data:
+        LOKI_URL: http://{{ monitor_node_ip }}:3100/loki/api/v1/push
+  become: true
+  become_user: "{{ app_user }}"
+  register: k8s_monitoring_config_apply
+  changed_when: "' unchanged' not in k8s_monitoring_config_apply.stdout"
+  check_mode: false
+
 - name: Apply manifests from k8s/
   ansible.builtin.command:
     cmd: kubectl apply -f - {{ '--dry-run=server' if ansible_check_mode else '' }}

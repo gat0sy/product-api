@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
     <springProperty name="appName" source="spring.application.name"/>
+    <!-- Set with the LOKI_URL env var (monitoring-config ConfigMap on Kubernetes) -->
+    <springProperty name="lokiUrl" source="loki.url" defaultValue="http://localhost:3100/loki/api/v1/push"/>
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -10,7 +12,7 @@
 
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
         <http>
-            <url>http://192.168.56.101:3100/loki/api/v1/push</url>
+            <url>${lokiUrl}</url>
             <connectionTimeoutMs>5000</connectionTimeoutMs>
             <requestTimeoutMs>5000</requestTimeoutMs>
         </http>

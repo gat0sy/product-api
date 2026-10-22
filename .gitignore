@@ -32,5 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 
-### Ansible secrets (copy from secrets.yml.example) ###
+### Ansible local settings (copy from the .example files) ###
 ansible/group_vars/all/secrets.yml
+ansible/group_vars/all/env.yml

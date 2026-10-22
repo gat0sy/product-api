@@ -32,11 +32,10 @@ REST API for managing a product inventory, built with Spring Boot on top of the 
 │   └── mysql.yaml                   # MySQL Deployment + Service
 ├── ansible/                         # provisions both VMs (see "Provisioning with Ansible")
 │   ├── site.yml, inventory.ini, ansible.cfg
-│   ├── group_vars/all/              # shared variables, secrets.yml.example
+│   ├── group_vars/all/              # shared variables, env.yml.example, secrets.yml.example
 │   └── roles/                       # common, minikube, k8s_app, ingress_proxy, observability
 ├── observability/
 │   ├── docker-compose.yml           # Prometheus, Loki, Grafana (pinned, named volumes)
-│   ├── prometheus.yml               # scrape config
 │   └── grafana/                     # provisioned datasources and dashboard
 ├── .github/workflows/ci.yml         # GitHub Actions pipeline
 └── .gitlab-ci.yml                   # original GitLab pipeline
@@ -238,36 +237,37 @@ Measured behavior with this allocation:
 **Manual prerequisites** (done once per VM, not automated):
 
 - Ubuntu 22.04 VMs sized at least to the minimal profile in "Sizing recommendations" (the recommended profile is better).
-- A user `gatosy` that can `sudo` on each VM.
+- A user that can `sudo` on each VM (`devops` by default, set as `app_user` in `env.yml`).
 - `enp0s3`: NAT adapter with DHCP (internet access).
-- `enp0s8`: host-only adapter (`vboxnet0`) with a static IP in netplan: `192.168.56.102` for `k8s-node`, `192.168.56.101` for `monitor-node`.
+- `enp0s8`: host-only adapter (`vboxnet0`) with a static IP in netplan. The defaults are `192.168.56.102` for `k8s-node` and `192.168.56.101` for `monitor-node`; other addresses work if you set them in `env.yml`.
 - A dedicated SSH key from the control machine:
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/ansible_ed25519 -N "" -C "ansible@client"
-ssh-copy-id -i ~/.ssh/ansible_ed25519.pub gatosy@192.168.56.102
-ssh-copy-id -i ~/.ssh/ansible_ed25519.pub gatosy@192.168.56.101
+ssh-copy-id -i ~/.ssh/ansible_ed25519.pub devops@192.168.56.102
+ssh-copy-id -i ~/.ssh/ansible_ed25519.pub devops@192.168.56.101
 ```
 
 **Running it** (from `ansible/`, on a machine with Ansible ≥ 2.15):
 
 ```bash
 ansible-galaxy collection install -r requirements.yml
+cp group_vars/all/env.yml.example group_vars/all/env.yml           # then set your VM user and IPs
 cp group_vars/all/secrets.yml.example group_vars/all/secrets.yml   # then choose your own passwords
 ansible all -m ping
 ansible-playbook site.yml --ask-become-pass --check --diff          # dry run
 ansible-playbook site.yml --ask-become-pass
 ```
 
-`secrets.yml` is git-ignored. Its values are only used when MySQL and Grafana are first created; changing them later does not change the passwords stored in existing data volumes.
+`env.yml` and `secrets.yml` are git-ignored. `env.yml` is the only place the VM user and IPs are set: the inventory, the Prometheus scrape target and the app's Loki URL all come from it. The values in `secrets.yml` are only used when MySQL and Grafana are first created; changing them later does not change the passwords stored in existing data volumes.
 
 | Role | Hosts | What it sets up |
 |---|---|---|
-| `common` | both | Docker Engine and Compose plugin from Docker's apt repository, Docker enabled at boot, `gatosy` in the `docker` group |
+| `common` | both | Docker Engine and Compose plugin from Docker's apt repository, Docker enabled at boot, `app_user` in the `docker` group |
 | `minikube` | `k8s-node` | minikube 1.38.1 and kubectl 1.35.3 (checksum-verified), the `minikube` systemd service (creates the cluster on first start: docker driver, 2 CPUs, 2800 MB, Kubernetes 1.35.1), ingress and storage addons |
-| `k8s_app` | `k8s-node` | `devops-l3gl` namespace, `mysql-secret` from `secrets.yml`, then `k8s/mysql.yaml` and `k8s/l3gl-devops.yaml` |
+| `k8s_app` | `k8s-node` | `devops-l3gl` namespace, `mysql-secret` from `secrets.yml`, `monitoring-config` (`LOKI_URL`, from `monitor_node_ip`), then `k8s/mysql.yaml` and `k8s/l3gl-devops.yaml` |
 | `ingress_proxy` | `k8s-node` | host nginx forwarding port 80 (`/api/`, `/actuator/`) to the minikube ingress at `minikube ip`, so the API is reachable from outside the VM |
-| `observability` | `monitor-node` | copies `observability/` to `~/observability`, writes the Grafana admin password to `.env`, runs `docker compose up -d` |
+| `observability` | `monitor-node` | copies `observability/` to `~/observability`, writes `prometheus.yml` (scrape target from `k8s_node_ip`) and the Grafana admin password to `.env`, runs `docker compose up -d` |
 
 On a fresh VM, expect the first run to take a while: creating the minikube cluster, MySQL's first initialization and Grafana's first start can each take around 10 minutes on this hardware.
 
@@ -282,6 +282,10 @@ kubectl create namespace devops-l3gl
 kubectl create secret generic mysql-secret -n devops-l3gl \
   --from-literal=mysql-root-password='<password>'
 
+# Where the app pushes its logs (optional; without it logs only go to the console)
+kubectl create configmap monitoring-config -n devops-l3gl \
+  --from-literal=LOKI_URL=http://192.168.56.101:3100/loki/api/v1/push
+
 kubectl apply -f k8s/mysql.yaml
 kubectl apply -f k8s/l3gl-devops.yaml
 ```
@@ -295,7 +299,7 @@ kubectl apply -f k8s/l3gl-devops.yaml
 `k8s/l3gl-devops.yaml` defines:
 
 - **ConfigMap** `product-api-config`: datasource URL, username, and JPA `ddl-auto`.
-- **Deployment** `product-api`: an init container that waits until the `mysql` Service accepts connections, image `gat0sy/product-api:latest`, password injected from `mysql-secret`, JVM heap capped at 400 MB (`-Xms256m -Xmx400m`), requests 200m CPU / 512Mi and limits 400m CPU / 768Mi, liveness and readiness probes on the actuator health endpoints (160 s initial delay, failure threshold 5).
+- **Deployment** `product-api`: an init container that waits until the `mysql` Service accepts connections, image `gat0sy/product-api:latest`, password injected from `mysql-secret`, `LOKI_URL` from the optional `monitoring-config`, JVM heap capped at 400 MB (`-Xms256m -Xmx400m`), requests 200m CPU / 512Mi and limits 400m CPU / 768Mi, liveness and readiness probes on the actuator health endpoints (160 s initial delay, failure threshold 5).
 - **Service** `product-api` on port 8086.
 - **Ingress** routing `/` to the service, reachable at `http://192.168.56.102/`.
 
@@ -310,7 +314,7 @@ kubectl rollout status deploy/product-api -n devops-l3gl
 
 Both VMs bring their workloads back on boot, with no manual step:
 
-- **`k8s-node`**: a `minikube` systemd service (template in `ansible/roles/minikube/templates/minikube.service.j2`) runs `minikube start` as `gatosy` once Docker is up, and `minikube stop` at shutdown. The workloads are already defined in the cluster, so Kubernetes restarts MySQL and product-api by itself; the init container keeps product-api waiting until MySQL is ready.
+- **`k8s-node`**: a `minikube` systemd service (template in `ansible/roles/minikube/templates/minikube.service.j2`) runs `minikube start` as `app_user` once Docker is up, and `minikube stop` at shutdown. The workloads are already defined in the cluster, so Kubernetes restarts MySQL and product-api by itself; the init container keeps product-api waiting until MySQL is ready.
 - **`monitor-node`**: Docker is enabled at boot and the Compose services use `restart: unless-stopped`, so Prometheus, Loki and Grafana come back on their own.
 
 The service is installed by the Ansible `minikube` role. To inspect it on `k8s-node`:
@@ -324,7 +328,7 @@ journalctl -u minikube.service -b     # startup log
 
 On `monitor-node`:
 
-The stack is deployed by the Ansible `observability` role, which copies `observability/` to `~/observability` and runs `docker compose up -d`. Images are pinned (Prometheus 3.11.1, Loki 2.9.0, Grafana 12.4.2) and each service keeps its data in a named volume. The Grafana admin password comes from a `.env` file written by Ansible.
+The stack is deployed by the Ansible `observability` role, which copies `observability/` to `~/observability`, renders `prometheus.yml` from `ansible/roles/observability/templates/prometheus.yml.j2` and runs `docker compose up -d`. Images are pinned (Prometheus 3.11.1, Loki 2.9.0, Grafana 12.4.2) and each service keeps its data in a named volume. The Grafana admin password comes from a `.env` file written by Ansible.
 
 | Service | URL | Notes |
 |---|---|---|
@@ -332,7 +336,7 @@ The stack is deployed by the Ansible `observability` role, which copies `observa
 | Loki | `http://192.168.56.101:3100` | Receives logs pushed by the app |
 | Grafana | `http://192.168.56.101:3000` | Data sources and the "Product API Monitoring" dashboard are provisioned from `observability/grafana/` |
 
-Logs are pushed by the loki4j Logback appender with labels `app=product-api` and `level=<LEVEL>`, in batches of 10 entries or every 5 s. They are also written to the console, so `kubectl logs` still works.
+Logs are pushed to `LOKI_URL` (default `http://localhost:3100/loki/api/v1/push`) by the loki4j Logback appender with labels `app=product-api` and `level=<LEVEL>`, in batches of 10 entries or every 5 s. They are also written to the console, so `kubectl logs` still works.
 
 ## Known limitations
 
@@ -341,7 +345,6 @@ These are known and planned to be addressed shortly:
 - **Resource allocation not tuned yet.** MySQL has no requests or limits, so it is scheduled as BestEffort and is the first pod evicted or OOM-killed under memory pressure. minikube's container is capped at 2800 MiB while the node advertises the full 4 GiB of the VM, so the scheduler can over-commit memory. `product-api` uses a rolling update, briefly running two JVMs on 2 vCPUs. `monitor-node`'s disk is 74% full.
 - **Slow first start.** On the resource-constrained VMs, MySQL's first-time initialization of an empty volume and Grafana's first start on an empty database each take ~10 minutes. product-api waits for MySQL (init container) instead of crash-looping, but the app is unavailable until then. Later restarts reuse the volumes and are much faster.
 - **No Loki retention.** Loki currently uses filesystem-backed storage without an explicit retention policy (the image's default config, no compactor), so its disk consumption grows over time. Prometheus keeps its default 15 days of metrics. The recommended monitoring VM size provides additional capacity but does not replace retention configuration and disk monitoring.
-- **Hard-coded IPs.** The Loki URL (`logback-spring.xml`, baked into the Docker image) and the Prometheus target (`prometheus.yml`) use fixed VM addresses, so reproducing the setup elsewhere requires the same `192.168.56.101`/`.102` addresses or editing those files.
 - **Root database user.** The application connects to MySQL as `root`; a dedicated, least-privilege user would be safer.
 
 ## Authors

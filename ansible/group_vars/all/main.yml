@@ -1,9 +1,5 @@
-# Account that owns Docker, minikube and the compose project on every VM
-app_user: gatosy
+# app_user and the VM IPs come from env.yml (copy env.yml.example)
 app_home: "/home/{{ app_user }}"
-
-k8s_node_ip: 192.168.56.102
-monitor_node_ip: 192.168.56.101
 
 # Pinned to what runs on the current VMs
 minikube_version: v1.38.1

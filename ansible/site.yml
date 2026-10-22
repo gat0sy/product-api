@@ -1,5 +1,22 @@
 # Provisions both VMs from a fresh Ubuntu 22.04 install (see README for the manual prerequisites).
 # Run from ansible/: ansible-playbook site.yml --ask-become-pass
+# Fails early, before connecting to the VMs, if env.yml is missing
+- name: Check local settings
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # The inventory's ansible_user needs app_user, which is what this play checks for
+    ansible_user: "{{ lookup('ansible.builtin.env', 'USER') }}"
+  tasks:
+    - name: Check that env.yml exists
+      ansible.builtin.assert:
+        that:
+          - app_user is defined
+          - k8s_node_ip is defined
+          - monitor_node_ip is defined
+        fail_msg: Copy group_vars/all/env.yml.example to env.yml and set your VM user and IPs.
+        quiet: true
+
 - name: Base setup (Docker)
   hosts: all
   become: true

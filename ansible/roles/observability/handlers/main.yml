@@ -1,0 +1,6 @@
+# prometheus.yml is a single-file bind mount; a recreated file needs a restart to be seen
+- name: Restart Prometheus
+  community.docker.docker_compose_v2:
+    project_src: "{{ observability_dir }}"
+    services: [prometheus]
+    state: restarted
