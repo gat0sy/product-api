@@ -2,6 +2,16 @@
 
 [![CI/CD](https://github.com/gat0sy/product-api/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/gat0sy/product-api/actions/workflows/ci.yml)
 
+![Java](https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=springboot&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-minikube-326CE5?logo=kubernetes&logoColor=white)
+![Ansible](https://img.shields.io/badge/Ansible-EE0000?logo=ansible&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white)
+![Loki](https://img.shields.io/badge/Loki-F46800?logo=grafana&logoColor=white)
+
 REST API for managing a product inventory, built with Spring Boot on top of the `product-core` library (entity, repository and service layer). The project ships with a full DevOps toolchain: CI/CD, a Docker image, Kubernetes manifests, and metrics/logs observability with Prometheus, Loki and Grafana.
 
 ## Tech stack
